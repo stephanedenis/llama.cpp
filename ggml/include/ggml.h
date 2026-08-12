@@ -2938,6 +2938,10 @@ extern "C" {
             struct ggml_cgraph * cgraph,
             struct ggml_tensor * tensor);
 
+    GGML_API void ggml_build_forward_order(
+            struct ggml_cgraph * cgraph,
+            struct ggml_tensor * tensor);
+
     GGML_API void ggml_build_backward_expand(
         struct ggml_context *  ctx,        // context for gradient computation
         struct ggml_cgraph  *  cgraph,

@@ -85,12 +85,18 @@ add_library(${TARGET}
     llguidance.cpp
     log.cpp
     log.h
+    host-ram.cpp
+    host-ram.h
     ngram-cache.cpp
     ngram-cache.h
     ngram-map.cpp
     ngram-map.h
     ngram-mod.cpp
     ngram-mod.h
+    kv-ssd-cache.cpp
+    kv-ssd-cache.h
+    kv-ssd-system-cache.cpp
+    kv-ssd-system-cache.h
     peg-parser.cpp
     peg-parser.h
     preset.cpp

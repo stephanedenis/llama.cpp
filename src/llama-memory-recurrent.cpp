@@ -214,7 +214,9 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
             // partial rollback via per-token snapshot index (bounded by n_rs_seq)
             if (0 < p0 && p0 <= cell.pos && p1 > cell.pos) {
                 const llama_pos rollback = cell.pos - (p0 - 1);
-                if (rollback >= 1 && rollback <= (llama_pos) n_rs_seq) {
+                // pending rollback is single-use
+                const bool pending = (size_t) seq_id < rs_idx.size() && rs_idx[seq_id] != 0;
+                if (!pending && rollback >= 1 && rollback <= (llama_pos) n_rs_seq) {
                     set_rs_idx(seq_id, (uint32_t) rollback);
                     cell.pos = p0 - 1;
                     return true;
@@ -289,6 +291,64 @@ bool llama_memory_recurrent::seq_rm_cell(llama_seq_id seq_id, uint32_t cell_idx)
 
     if ((uint32_t) seq_id < size && cells[seq_id].tail == (int32_t) cell_idx) {
         cells[seq_id].tail = -1;
+    }
+
+    return true;
+}
+
+bool llama_memory_recurrent::seq_rm_positions_only(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+    if (p0 < 0) {
+        p0 = 0;
+    }
+
+    if (p1 < 0) {
+        p1 = std::numeric_limits<llama_pos>::max();
+    }
+
+    // remove seq_id from cells with positions in [p0, p1) WITHOUT
+    // touching cell.pos, tail, src, used, head, or rs_idx. this is
+    // strictly a position-tracking clear that bypasses the n_rs_seq
+    // rollback path in seq_rm() - which can fail (return false) when
+    // rollback would exceed n_rs_seq on mamba/GDN-style models.
+    //
+    // purpose: after a hybrid-model checkpoint restore loads full
+    // recurrent state with positions extending past the checkpoint's
+    // logical end (e.g., the previous turn's generated tokens), the
+    // seq_pos_min/max reporting still reflects those stale positions.
+    // llama_batch_init validation fails because Y (new batch start)
+    // is not >= X (memory seq_pos_max) + 1.
+    //
+    // this method lets hybrid memory clear mem_recr's stale positions
+    // safely: the underlying R/S tensor data is preserved (so no
+    // rollback crash), but seq_id is removed from cells past p0, so
+    // seq_pos_max correctly reports p0 - 1.
+    for (uint32_t i = 0; i < size; ++i) {
+        if (cells[i].pos >= p0 && cells[i].pos < p1) {
+            if (seq_id < 0) {
+                cells[i].seq_id.clear();
+            } else if (cells[i].has_seq_id(seq_id)) {
+                cells[i].seq_id.erase(seq_id);
+            }
+        }
+    }
+
+    // Update the per-seq tail pointer to reflect any cleared cells past
+    // the new boundary.
+    if (seq_id >= 0 && (uint32_t) seq_id < size) {
+        int32_t & tail_id = cells[seq_id].tail;
+        if (tail_id >= 0 && !cells[tail_id].has_seq_id(seq_id)) {
+            int32_t new_tail = -1;
+            llama_pos new_tail_pos = -1;
+            for (uint32_t i = 0; i < size; ++i) {
+                if (cells[i].has_seq_id(seq_id)) {
+                    if (cells[i].pos > new_tail_pos) {
+                        new_tail_pos = cells[i].pos;
+                        new_tail = (int32_t) i;
+                    }
+                }
+            }
+            tail_id = new_tail;
+        }
     }
 
     return true;
