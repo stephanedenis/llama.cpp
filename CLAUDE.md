@@ -41,10 +41,19 @@ hardware rather than reusing the `sm_86` artifact names.
 
 CUDA FlashAttention vector cache coverage has two build modes:
 
-- Default: 103 pairs over `f16`, `bf16`, `q8_0`, `q6_1`, `q6_0`, `q5_1`,
+- Default: 50 pairs over `f16`, `bf16`, `q8_0`, `q6_1`, `q6_0`, `q5_1`,
   `q5_0`, `q4_1`, `q4_0`, `q3_1`, `q3_0`, `q2_1`, and the fork's internal
-  q2 fallback type. It uses `rank(K) <= rank(V) || K == f16 || V == f16`.
+  q2 fallback type (`GGML_TYPE_Q2_0S`). The 48 quantized pairs are derived from
+  the 15 balanced KVarN bit-pair rules; same-bit pairs retain `_1:_1`, `_1:_0`,
+  and `_0:_0` variants. Homogeneous `f16:f16` and `bf16:bf16` pairs cover KVarN
+  and standard precision tails. Mixed float/quant and mixed F16/BF16 pairs use
+  the normal CUDA FlashAttention fallback instead of a compiled vector case.
 - `-DGGML_CUDA_FA_ALL_QUANTS=ON`: all 169 ordered vector pairs.
+
+The authoritative count lives in the generated
+`ggml/src/ggml-cuda/fattn-vec-dispatch.cuh` (see
+`scripts/gen-fattn-vec-dispatch.py`); count `FATTN_VEC_CASES_ALL_D` entries in
+the `#else` branch rather than trusting a prose figure.
 
 There is no `GGML_CUDA_FA_HALF_QUANTS` tier. KVarN has 15 balanced fast-decode
 pairs by default and all 36 with `GGML_CUDA_FA_ALL_QUANTS=ON`; every valid KVarN
