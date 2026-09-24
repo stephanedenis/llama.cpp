@@ -232,3 +232,64 @@ The box runs one large model well or several small ones, not both. An agentic
 deployment should give the model the machine: stop the auxiliary servers, raise
 the context, and turn on KVarN to pay for that context inside the same VRAM.
 
+## gpt-oss-120b: the agentic model this machine can actually run
+
+The models hosted before could not call tools at all. gpt-oss-120b can, and it
+lives in RAM rather than VRAM, which plays to this host's strengths. Measured
+with the three production servers stopped, 64 GB of experts in system RAM, and
+attention plus KV on the two GPUs:
+
+| Configuration | tg (t/s) | pp (t/s) | Note |
+|---|---:|---:|---|
+| `-cmoe`, mmap | 11.0 | 24 | reference |
+| `-cmoe --no-mmap` | 10.4 | **34** | prefill +42 % |
+| `-cmoe --no-mmap -ncmoe 24` | 11.1 | 35 | moving experts to GPU barely helps |
+| `-cmoe --no-mmap` + EAGLE3 | **12.9** | 33 | draft accepted 594/915 = 65 % |
+
+Native tool calling works: a `get_weather` request returns a proper
+`tool_calls` entry with `{"city": "Montreal"}`, where Codestral invented the
+result and Qwen2.5-VL refused.
+
+`--no-mmap` is worth taking: llama.cpp warns that tensor overrides to CPU with
+mmap enabled cost performance, and the prefill measurement agrees. It costs
+about a minute of load time.
+
+EAGLE3 is genuinely useful here (65 % acceptance, +24 % over the no-mmap
+baseline), unlike draft-simple on the dense models, because verifying several
+tokens amortises the same RAM read.
+
+### Why this is the ceiling: memory bandwidth, not memory size
+
+Measured sequential read bandwidth on this host:
+
+| Placement | GB/s |
+|---|---:|
+| one socket, first-touch | 31.0 |
+| both sockets, interleaved | **51.7** |
+| a single core | 4.0 |
+
+EDAC reports two DIMMs per socket, in channel 0 and channel 1. Haswell-EP has
+**four** channels per socket, so half of the platform's memory channels are
+empty. The measured 51.7 GB/s is consistent with four active channels of
+DDR4-2133 at roughly 76 % efficiency.
+
+That number governs CPU-resident inference. Decoding gpt-oss reads about 2.4 GB
+of active expert weights per token; 2.4 GB against 52 GB/s is a hard ceiling
+near 20 t/s, and the measured 11-13 t/s sits below it once attention and
+scheduling are paid for. Halving the bandwidth halves the speed; filling the
+empty channels would roughly double it.
+
+So the upgrade advice is not "more RAM", it is "more channels":
+
+- **512 GB as 8 x 64 GB** fills all eight channels: twice the bandwidth and four
+  times the capacity. This is the configuration worth buying.
+- **512 GB as 4 x 128 GB** adds capacity and no bandwidth: larger models at the
+  same 11 t/s.
+- Replacing the current 4 x 32 GB with 8 x 32 GB (256 GB) already buys the full
+  bandwidth for half the money.
+
+Capacity still matters, for a different reason: decode speed tracks the *active*
+parameters, not the total, so 512 GB would allow a 200-400B sparse model with
+around 5B active to answer at the same ~11 t/s. Capacity buys quality, bandwidth
+buys speed, and VRAM still buys the only fast tokens.
+
