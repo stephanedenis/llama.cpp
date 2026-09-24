@@ -408,3 +408,43 @@ Weighted interleave is available if an imbalanced layout ever has to be used:
 the kernel is 7.2 and exposes `/sys/kernel/mm/mempolicy/weighted_interleave/`,
 with `numactl --weighted-interleave`. It distributes pages in proportion to
 capacity, but it cannot make a small socket carry a large share of the reads.
+
+## Running without Internet
+
+Verified rather than assumed: `scripts/check-offline.sh` re-runs the stack inside
+an unprivileged network namespace (`unshare -rn`), which leaves loopback and
+nothing else — no DNS, no route. It is the equivalent of unplugging the cable,
+without touching the rest of the machine.
+
+Result on this host, with the namespace confirmed sealed (no interface carrying
+an address besides loopback, DNS unresolvable, HTTPS unreachable):
+
+| Checked | Result |
+|---|---|
+| `llama-server` gpt-oss-120b + EAGLE3 | loads in 42 s, 16.8 t/s |
+| native tool call | `{"name": "get_weather", "arguments": "{\"city\": \"Montreal\"}"}` |
+| `llama-server` small model + `/v1/decision` | 48-90 ms |
+| routing gateway, no external backend | serves, refuses egress by policy |
+
+Nothing in the inference path reaches for the network. The build does not either:
+third-party code is vendored under `vendor/`, and the one `FetchContent` in
+`ggml-cuda` is behind `GGML_CUDA_CUB_3DOT2`, which is off, so a rebuild from a
+clean tree needs no download.
+
+### What still talks to the outside
+
+The inference stack is clean, but two neighbouring services are not, and both
+matter for a real air gap:
+
+- **open-webui** runs in Docker with working outbound access, and its
+  `OFFLINE_MODE` defaults to `false`, which leaves the version update check on.
+  Anonymous telemetry is already disabled here. Set `OFFLINE_MODE=true` (it also
+  sets `HF_HUB_OFFLINE=1` and turns the update check off) before treating the box
+  as isolated.
+- **ollama** is running with about 44 GB of models that duplicate what
+  llama.cpp already serves, and it can pull more on demand. If it is not in use,
+  stop and disable it rather than leaving a second network-capable model server
+  on the machine.
+
+Model downloads themselves are the obvious one-time exception: every model in
+use is already on disk under `~/FastNVMe/models`.
