@@ -5960,6 +5960,16 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
             .expect(message_assist_call)
             .run();
 
+        // Regression: same loop, second variant. The model marks a final message
+        // with a constraint even though no response_format was requested:
+        //   <|channel|>final <|constrain|>json<|message|>{...}
+        // The body is the message; keep it rather than rejecting the request.
+        tst.test("<|channel|>final <|constrain|>json<|message|>{\"call\": \"finish\"}")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ special_function_tool })
+            .expect_content("{\"call\": \"finish\"}")
+            .run();
+
         // Tool call with reasoning + content (analysis first, then tool call)
         tst.test(
                "<|channel|>analysis<|message|>I'm\nthinking<|end|>"
