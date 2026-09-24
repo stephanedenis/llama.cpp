@@ -325,3 +325,38 @@ memory controller runs them at 2133. Unbuffered ECC (UDIMM) will not post in
 this machine. Match the existing modules' rank and vendor if adding to them
 rather than replacing, and populate the slots in the order the owner's manual
 specifies so both sockets stay balanced.
+
+### Free optimisation: make both sockets carry the model
+
+The DIMMs themselves are already at full speed: ~54 GB/s over four channels is
+79 % of DDR4-2133's theoretical rate, which is what a healthy STREAM-style read
+achieves. Rearranging four DIMMs cannot help either, because the total channel
+count is what sets bandwidth, and it stays four wherever they are plugged.
+
+What is free is making sure the weight buffer actually uses both sockets.
+llama.cpp allocates the CPU-resident layers itself; without a NUMA policy the
+pages land on whichever node first touches them, so one socket serves the whole
+model and the other reaches across QPI.
+
+Measured on gpt-oss-120b, experts in RAM, same prompt:
+
+| Launch | tg (t/s) | pp (t/s) |
+|---|---:|---:|
+| default, no NUMA policy | 12.7 | 31 |
+| **`numactl --interleave=all`** | **18.7** | 32 |
+| `--numa distribute` (llama.cpp's own) | 12.5 | 32 |
+| single socket, `--cpunodebind=0 --membind=0`, `-t 10` | 11.1 | 26 |
+
+**+47 % decode for one wrapper command**, and the single-socket row confirms why:
+confining the work to one node loses the other node's channels.
+
+`scripts/serve-agentic.sh` applies this. Two further knobs need root and were
+therefore not measured here; `scripts/optimize-system.sh` now sets both:
+
+- `transparent_hugepage/defrag` was `madvise`, so a 63 GB buffer only obtained
+  huge pages opportunistically. `always` asks the kernel to compact for them.
+- `numa_balancing` was enabled, and it migrates hot pages towards the reading
+  node, which works against an explicit interleave policy.
+
+Treat both as hypotheses to measure, not as established gains: unlike the
+interleave result above, they could not be A/B tested without root.
