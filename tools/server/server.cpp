@@ -156,6 +156,29 @@ int llama_server(common_params & params, int argc, char ** argv) {
         }
     }
 
+    // /decision branches fork the cached prompt with llama_memory_seq_cp. A unified KV cache lets
+    // them share the prefix cells instead of copying them between per-sequence streams.
+    //
+    // 256 is LLAMA_MAX_SEQ from src/llama-cparams.h; that header is internal to libllama, so the
+    // value is repeated here. Fail early and clearly instead of letting the context constructor
+    // abort later.
+    constexpr int server_max_seq = 256;
+    if (params.n_seq_decision > 0) {
+        if (params.n_seq_decision < 3) {
+            SRV_ERR("--decision-seqs must be 0 (disabled) or at least 3, got %d\n", params.n_seq_decision);
+            return 1;
+        }
+        if (params.n_parallel + params.n_seq_decision > server_max_seq) {
+            SRV_ERR("n_parallel (%d) + --decision-seqs (%d) must stay <= %d\n",
+                    params.n_parallel, params.n_seq_decision, server_max_seq);
+            return 1;
+        }
+        if (!params.kv_unified) {
+            SRV_INF("--decision-seqs %d: enabling the unified KV cache\n", params.n_seq_decision);
+            params.kv_unified = true;
+        }
+    }
+
     // for consistency between server router mode and single-model mode, we set the same model name as alias
     auto model_name = params.model.get_name();
     if (params.model_alias.empty() && !model_name.empty()) {
@@ -209,6 +232,7 @@ int llama_server(common_params & params, int argc, char ** argv) {
         routes.post_embeddings             = models_routes->proxy_post;
         routes.post_embeddings_oai         = models_routes->proxy_post;
         routes.post_rerank                 = models_routes->proxy_post;
+        routes.post_decision               = models_routes->proxy_post;
         routes.post_tokenize               = models_routes->proxy_post;
         routes.post_detokenize             = models_routes->proxy_post;
         routes.post_apply_template         = models_routes->proxy_post;
@@ -257,6 +281,8 @@ int llama_server(common_params & params, int argc, char ** argv) {
     ctx_http.post("/reranking",                ex_wrapper(routes.post_rerank));
     ctx_http.post("/v1/rerank",                ex_wrapper(routes.post_rerank));
     ctx_http.post("/v1/reranking",             ex_wrapper(routes.post_rerank));
+    ctx_http.post("/decision",                 ex_wrapper(routes.post_decision));
+    ctx_http.post("/v1/decision",              ex_wrapper(routes.post_decision));
     ctx_http.post("/tokenize",                 ex_wrapper(routes.post_tokenize));
     ctx_http.post("/detokenize",               ex_wrapper(routes.post_detokenize));
     ctx_http.post("/apply-template",           ex_wrapper(routes.post_apply_template));

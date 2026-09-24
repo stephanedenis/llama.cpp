@@ -598,6 +598,71 @@ process exit as a failed measurement rather than a score.
 The base file is tied to its vocabulary, evaluation tokens, and context size.
 It is a measurement artifact, not a portable model format.
 
+## Parallel constrained decisions
+
+### What it is
+
+`POST /decision` and `POST /v1/decision` answer a finite JSON schema without
+generating it. Every field of the schema has a fixed set of allowed values
+(enum, boolean, bounded integer, or number on a grid). After a shared, cached
+prefix, each field's value is scored as token paths that fork from that prefix
+with `llama_memory_seq_cp`, so all fields are answered in **one batched
+`llama_decode`** and cannot see each other's answers. The JSON object is
+assembled in code, so a reply always matches the schema by construction.
+
+Each field comes back with a `probability` derived from a log-softmax restricted
+to that field's allowed tokens, so a wrong pick is a low-probability pick rather
+than a malformed answer.
+
+This is a port of `thecodacus/llama.cpp`, branch `parallel-decision` (commit
+`b9244f893b`). See
+[parallel-decision/README.md](../tools/parallel-decision/README.md) for the
+request and response reference, the schema table, and the engine design.
+
+### When to use it
+
+Use it when a decision has a small, known set of outcomes and latency matters:
+routing, triage, classification, or extracting a fixed schema from state. It
+replaces generation with scoring, so the cost is one prefill plus one batched
+pass instead of one decode step per output token. On a 7B Q4 model on two RTX
+5000s, three fields over two contexts measured 76 ms per decision cold and 46 ms
+per decision with the prefix already cached.
+
+### Key arguments
+
+- [`--decision-seqs`](beellama-args.md#parallel-constrained-decisions) reserves
+  the sequences and enables the endpoint.
+
+`--decision-seqs N` forces the unified KV cache. That matters for the rest of
+this fork: unified KV is the configuration in which KVarN applies one policy to
+all layers, so `--cache-type-k-swa` / `--cache-type-v-swa` overrides no longer
+have a separate SWA group to act on. Decide per deployment which of the two you
+want.
+
+### Costs and limits
+
+- A decision runs on the server's main queue thread and performs its own decodes,
+  so it serializes against slot scheduling for its duration.
+- The cached prefix occupies KV cells in the shared pool. It is released when the
+  shared text changes; a full pool returns a clean error instead of corrupting
+  state.
+- Between 1 and 256 contexts per request, up to 32 fields, up to 255 values per
+  field, and `n_parallel + n_seq_decision <= 256`.
+- Attention-only models share the prefix cells cheaply. Sliding-window models
+  allocate their window per sequence, so keep the sequence count low. Hybrid
+  recurrent models still work but split their batches per sequence length, so the
+  branches run in several passes instead of one.
+- KVarN and decision branches have not been validated together. `seq_cp` reaches
+  the KVarN cache through `metadata->seq_cp`, so the combination is expected to
+  work, but treat it as untested until it has been measured.
+
+### Measurement and validation
+
+Report `timings.per_decision_ms` together with the model, the number of fields,
+the number of values per field, the context count, and whether
+`usage.cached_tokens` was nonzero. A cold first request and a warm cached one
+differ by the whole prefill, so quote both.
+
 ## Removed systems
 
 TurboQuant/TCQ, DDTree, CopySpec, the fork DFlash ring/capture/tape and reduced

@@ -177,6 +177,15 @@ behavior. The `--spec-dm-*` rows are Bee server additions.
 | Chat request JSON `"reasoning_control": true` | — | `false` | Arms a live `/v1/chat/completions` request for external reasoning control. The chat template must expose a reasoning end sequence. |
 | `POST /v1/chat/completions/control` with `{"id":"chatcmpl-...","action":"reasoning_end"}` | — | Disabled per request | Forces the armed completion's reasoning sampler toward its final-answer phase. Unknown or completed ids return a non-success result; `reasoning_end` is the only accepted action. |
 
+## Parallel constrained decisions
+
+| Argument | Env var | Default | Behavior |
+|---|---|---|---|
+| `--decision-seqs N` | `LLAMA_ARG_DECISION_SEQS` | `0` | Reserves `N` sequences for the `/decision` endpoint and enables it. `0` disables the endpoint, otherwise `N` must be at least 3 (one cached prefix, one trunk per context in flight, the rest are branches). Setting it forces the unified KV cache, which is what lets the branches share the prefix cells. `n_parallel + N` must stay at or below 256. |
+
+Details, request and response shape, and the schema grammar are in
+[parallel-decision/README.md](../tools/parallel-decision/README.md).
+
 ## Presets
 
 | Argument | Env var | Default | Behavior |

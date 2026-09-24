@@ -2915,6 +2915,19 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_MAX_CONCURRENT_PER_USER").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--decision-seqs"}, "N",
+        string_format("sequences reserved for the /v1/decision parallel constrained decisions endpoint "
+                      "(default: %d, 0 = disabled, minimum 3: one cached prefix, one trunk and one branch). "
+                      "Requires a unified KV cache, which this option enables automatically. "
+                      "n_parallel + N must stay <= 256.", params.n_seq_decision),
+        [](common_params & params, int value) {
+            if (value != 0 && value < 3) {
+                throw std::invalid_argument("--decision-seqs must be 0 (disabled) or at least 3");
+            }
+            params.n_seq_decision = value;
+        }
+    ).set_env("LLAMA_ARG_DECISION_SEQS").set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"-ns", "--sequences"}, "N",
         string_format("number of sequences to decode (default: %d)", params.n_sequences),
         [](common_params & params, int value) {

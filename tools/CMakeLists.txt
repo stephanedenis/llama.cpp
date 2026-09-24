@@ -21,6 +21,9 @@ else()
     add_subdirectory(completion)
     add_subdirectory(perplexity)
     add_subdirectory(quantize)
+    # defines the llama-decision engine target, which the server's /decision route links against,
+    # so it must be added before the server
+    add_subdirectory(parallel-decision)
     if (LLAMA_BUILD_SERVER)
         add_subdirectory(ui)
         add_subdirectory(cli)
