@@ -360,3 +360,37 @@ therefore not measured here; `scripts/optimize-system.sh` now sets both:
 
 Treat both as hypotheses to measure, not as established gains: unlike the
 interleave result above, they could not be A/B tested without root.
+
+### Why filling the empty slots with small modules does not pay
+
+A tempting idea: buy four cheap small modules, move the four 32 GB ones onto
+one socket, and end up with eight populated channels instead of four. The
+channel arithmetic is right, the outcome is not, because bandwidth follows the
+node that *holds* the data.
+
+| Read pattern | GB/s |
+|---|---:|
+| memory on one node, local readers | 31.5 |
+| memory on one node, readers on both sockets | **30.2** |
+| memory interleaved, readers on both | **55.3** |
+
+The middle row is the point: putting readers on the far socket does not add
+bandwidth, it only adds latency. QPI carries traffic, it does not create
+capacity. So a socket only contributes its channels in proportion to how much
+of the working set it holds.
+
+With 128 GB on one socket and 32 GB on the other, a 63 GB model splits roughly
+43/20. Each controller can deliver about 55 GB/s, so the slower one sets the
+pace: 43 GB at 55 GB/s, against 63 GB at 55 GB/s today. That is around 1.4x, not
+2x. Balanced capacity is what buys the full doubling, because then each
+controller carries half the reads: 31 GB each instead of 43.
+
+Hence: four matched 32 GB modules, giving 128 GB per socket, rather than four
+small ones. The imbalance costs most of the gain, and small DDR4 RDIMMs are not
+on Dell's published list for this chassis (only 32 GB and 64 GB appear), so they
+carry a compatibility risk on top.
+
+Weighted interleave is available if an imbalanced layout ever has to be used:
+the kernel is 7.2 and exposes `/sys/kernel/mm/mempolicy/weighted_interleave/`,
+with `numactl --weighted-interleave`. It distributes pages in proportion to
+capacity, but it cannot make a small socket carry a large share of the reads.
