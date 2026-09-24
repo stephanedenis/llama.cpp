@@ -5947,6 +5947,19 @@ static void test_template_output_peg_parsers(bool detailed_debug) {
             .expect(message_assist_call)
             .run();
 
+        // Regression: gpt-oss occasionally opens a tool call with the "final"
+        // channel and folds the recipient into the constraint slot:
+        //   <|channel|>final <|constrain|>commentary to=functions.NAME <|constrain|>json<|message|>ARGS
+        // Observed in an agent loop at the moment the model called its finish
+        // tool: the whole request was rejected with a 500 instead of being read
+        // as the call the model plainly intended.
+        tst.test(
+               "<|channel|>final <|constrain|>commentary to=functions.special_function <|constrain|>json<|message|>{\"arg1\": 1}")
+            .reasoning_format(COMMON_REASONING_FORMAT_AUTO)
+            .tools({ special_function_tool })
+            .expect(message_assist_call)
+            .run();
+
         // Tool call with reasoning + content (analysis first, then tool call)
         tst.test(
                "<|channel|>analysis<|message|>I'm\nthinking<|end|>"

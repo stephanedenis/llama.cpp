@@ -1189,6 +1189,15 @@ static common_chat_params common_chat_params_init_gpt_oss(const common_chat_temp
         auto stray_commentary = p.optional(p.literal("<|channel|>commentary") + p.optional(p.literal(" to=assistant")));
         auto start_analysis = stray_commentary + p.literal("<|channel|>analysis<|message|>");
 
+        // Occasionally gpt-oss opens a tool call on the "final" channel and
+        // repeats the real channel inside the constraint slot:
+        //   <|channel|>final <|constrain|>commentary to=functions.NAME<|constrain|>json<|message|>ARGS
+        // The recipient and the arguments are intact, so read it as the call the
+        // model intended instead of rejecting the whole request. Only the tool
+        // rules use this variant: a genuine final message is still
+        // "<|channel|>final<|message|>" and never carries "<|constrain|>" there.
+        auto channel_in_call = channel | (p.literal("<|channel|>final <|constrain|>") + (p.literal("commentary") | p.literal("analysis")));
+
         if (extract_reasoning) {
             p.rule("analysis", start_analysis + p.reasoning(content) + end);
         } else {
@@ -1231,7 +1240,7 @@ static common_chat_params common_chat_params_init_gpt_oss(const common_chat_temp
 
                 // recipient in channel header
                 //   <|channel|>(commentary|analysis) to=functions.NAME[constraint]<|message|>ARGS
-                auto tool_in_channel = p.tool(p.tool_open(channel + func_name + constraint + p.literal("<|message|>")) + args);
+                auto tool_in_channel = p.tool(p.tool_open(channel_in_call + func_name + constraint + p.literal("<|message|>")) + args);
 
                 tool_choice |= p.rule("tool-" + name, tool_in_role | tool_in_channel);
             });
@@ -1265,11 +1274,17 @@ static common_chat_params common_chat_params_init_gpt_oss(const common_chat_temp
             parser.build_grammar(builder, data.grammar_lazy);
         });
 
+        // The last two patterns also cover the stray form handled by
+        // channel_in_call, where the call opens on "final" and repeats the real
+        // channel in the constraint slot:
+        //   <|channel|>final <|constrain|>commentary to=functions.NAME...
         data.grammar_triggers = {
             { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN, "^\\s+to$" },
-            { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN, "^<\\|channel\\|>(?:commentary|analysis)\\s+to=functions$" },
+            { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN,
+              "^<\\|channel\\|>(?:(?:commentary|analysis)|final\\s+<\\|constrain\\|>(?:commentary|analysis))\\s+to=functions$" },
             { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN, "<\\|start\\|>assistant(\\s+to)" },
-            { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN, "<\\|start\\|>assistant(<\\|channel\\|>(?:commentary|analysis)\\s+to)" }
+            { COMMON_GRAMMAR_TRIGGER_TYPE_PATTERN,
+              "<\\|start\\|>assistant(<\\|channel\\|>(?:(?:commentary|analysis)|final\\s+<\\|constrain\\|>(?:commentary|analysis))\\s+to)" }
         };
     }
 
