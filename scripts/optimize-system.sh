@@ -23,17 +23,16 @@ echo "=== 2. Transparent Huge Pages -> always ==="
 echo always > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
 echo "  THP: $(cat /sys/kernel/mm/transparent_hugepage/enabled | head -1)"
 
-# defrag : sans ce réglage le noyau ne compacte pas la mémoire pour former des
-# pages de 2 Mo. Un modèle de 63 Go en RAM en a besoin ; en "madvise" il n'obtient
-# des pages géantes que si le hasard veut bien. À mesurer avant/après : le gain
-# attendu est réel mais plus faible que celui de l'entrelacement NUMA.
-echo always > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || true
-echo "  THP defrag: $(cat /sys/kernel/mm/transparent_hugepage/defrag | head -1)"
+# defrag : MESURÉ SANS EFFET sur ce matériel. Passer defrag à "always" pour
+# former des pages de 2 Mo n'a rien changé, ni au débit mémoire brut
+# (54,4-55,4 GB/s contre 53,9-55,5) ni au décodage de gpt-oss (18,5 contre
+# 18,7 t/s). L'accès est séquentiel : chaque page de 4 Ko est lue en entier
+# avant la suivante, donc les défauts de TLB s'amortissent seuls. "always" peut
+# en plus provoquer des à-coups pendant la compaction. On n'y touche pas.
+echo "  THP defrag: $(cat /sys/kernel/mm/transparent_hugepage/defrag | head -1) (laissé tel quel)"
 
-# NUMA balancing déplace les pages chaudes vers le nœud qui les lit. Pour un
-# buffer partagé lu par les deux sockets avec une politique d'entrelacement
-# explicite, il défait le travail de numactl. À désactiver pour les charges
-# liées à la bande passante mémoire.
+# NUMA balancing : également sans effet mesurable, mais conservé car il ne coûte
+# rien et empêche le noyau de défaire une politique d'entrelacement explicite.
 echo 0 > /proc/sys/kernel/numa_balancing 2>/dev/null || true
 echo "  numa_balancing: $(cat /proc/sys/kernel/numa_balancing 2>/dev/null)"
 

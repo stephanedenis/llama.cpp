@@ -350,16 +350,30 @@ Measured on gpt-oss-120b, experts in RAM, same prompt:
 **+47 % decode for one wrapper command**, and the single-socket row confirms why:
 confining the work to one node loses the other node's channels.
 
-`scripts/serve-agentic.sh` applies this. Two further knobs need root and were
-therefore not measured here; `scripts/optimize-system.sh` now sets both:
+`scripts/serve-agentic.sh` applies this, and it is the whole win.
 
-- `transparent_hugepage/defrag` was `madvise`, so a 63 GB buffer only obtained
-  huge pages opportunistically. `always` asks the kernel to compact for them.
-- `numa_balancing` was enabled, and it migrates hot pages towards the reading
-  node, which works against an explicit interleave policy.
+Two further knobs were tried and **measured to do nothing**. `optimize-system.sh`
+briefly set both; the measurements below were taken with them active:
 
-Treat both as hypotheses to measure, not as established gains: unlike the
-interleave result above, they could not be A/B tested without root.
+| Configuration | before | after |
+|---|---:|---:|
+| `numactl --interleave=all` | 18.7 t/s | 18.5 t/s |
+| default, no policy | 12.7 t/s | 13.0 t/s |
+
+Raw read bandwidth was unchanged too, 54.4-55.4 GB/s against 53.9-55.5 before.
+The interleave gain itself reproduces (+42 %, 18.5 against 13.0), so the
+measurement is sound; it is the two knobs that add nothing.
+
+- `transparent_hugepage/defrag` does not help because the access pattern is
+  streaming: each 4 KB page is consumed entirely before the next, so TLB misses
+  amortise themselves. Huge pages pay off for sparse access, not for this.
+- `numa_balancing` was already overridden by the explicit `numactl` policy, so
+  turning it off changes nothing in the interleaved case.
+
+`defrag` was left at `always` only for as long as it took to measure; the script
+now leaves it alone, because `always` can stall allocations during compaction and
+buys nothing here. `numa_balancing=0` is kept: it costs nothing and stops the
+kernel from working against an explicit interleave policy.
 
 ### Why filling the empty slots with small modules does not pay
 
