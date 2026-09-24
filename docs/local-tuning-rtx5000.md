@@ -93,3 +93,56 @@ NVMe, and `llama-bench` reloads the model for every test configuration.
   only. `-fa on` is still worth about 8 % prompt and 4 % generation over `-fa off`.
 - `test-chat` fails in `test_template_output_peg_parsers`, before and after the
   changes recorded here. It is unrelated to the CUDA path.
+
+## KVarN quality on the models actually hosted here
+
+The fork documents KVarN against Qwen 3.6 and Gemma 4. The models on this host
+are Qwen 2.5 and Mistral derivatives, so they were measured rather than assumed.
+All of them have `head_dim 128` and a causal, non-MLA layout, which is what the
+runtime check in `llama_init_from_model` asks for, and none of them needed a
+special case.
+
+Protocol: `llama-perplexity` on a 200 KB slice of `wiki.test.raw`, context 4096,
+`-b 512 -ub 256`, four chunks (two chunks for the 32B model, which does not fit
+in VRAM alongside the production servers), baseline `f16`/`f16` saved with
+`--save-all-logits`, candidates replayed with `--kl-divergence` against that
+same file. Every run used the identical corpus, batch sizes and cache family.
+
+| Model | PPL f16 | Cache | Mean KLD | RMS Δp | Same top p |
+|---|---:|---|---:|---:|---:|
+| Codestral-22B | 5.2953 | kvarn4 | **0.001350** | 1.114 % | 98.41 % |
+| | | kvarn4 + tail 1024 | **0.001023** | 0.999 % | 98.62 % |
+| | | kvarn3 | 0.003439 | 1.762 % | 97.66 % |
+| | | kvarn3 + tail 1024 | 0.001611 | 1.283 % | 98.21 % |
+| | | kvarn2 | 0.016730 | 3.932 % | 94.81 % |
+| | | kvarn2 + tail 1024 | 0.007574 | 2.821 % | 96.63 % |
+| Qwen2.5-Coder-32B | 6.8171 | kvarn4 | 0.008304 | 2.699 % | 96.34 % |
+| | | kvarn4 + tail 1024 | 0.001203 | 1.082 % | 98.61 % |
+| | | kvarn3 | 0.011541 | 2.945 % | 95.87 % |
+| | | kvarn3 + tail 1024 | 0.001713 | 1.209 % | 98.41 % |
+| DeepSeek-R1-Distill-14B | 6.1787 | kvarn4 | 0.004297 | 1.947 % | 97.08 % |
+| | | kvarn4 + tail 1024 | 0.003533 | 1.783 % | 97.52 % |
+| | | kvarn3 | 0.008306 | 2.735 % | 96.34 % |
+| | | kvarn3 + tail 1024 | 0.005086 | 2.161 % | 96.98 % |
+| | | kvarn2 | 0.048065 | 6.503 % | 90.89 % |
+| Qwen2.5-VL-7B | 8.0991 | kvarn4 | 0.005571 | 1.937 % | 96.96 % |
+| | | kvarn4 + tail 1024 | 0.003981 | 1.730 % | 96.86 % |
+| | | kvarn3 | 0.011422 | 2.972 % | 95.29 % |
+| | | kvarn3 + tail 1024 | 0.005645 | 2.213 % | 96.67 % |
+| | | kvarn2 | 0.167363 | 11.773 % | 84.01 % |
+| | | kvarn2 + tail 1024 | 0.051440 | 6.597 % | 91.40 % |
+
+What this says:
+
+- **kvarn4 is effectively free on Codestral-22B**, the model actually served on
+  port 8000: a mean KLD of 0.00135 with 98.4 % top-p agreement is well inside
+  measurement noise for a 4-bit cache.
+- **kvarn2 is where it breaks.** On Qwen2.5-VL-7B a mean KLD of 0.167 and 16 %
+  top-p disagreement is a different model, not a cheaper cache. Do not use it
+  without re-measuring on the real workload.
+- **The 1024-token precision tail pays off most where quality is worst.** On the
+  32B it improves kvarn4 from 0.0083 to 0.0012, a factor of seven, for 1024
+  exact tokens per group. That is the intended trade and it is confirmed here.
+- These numbers are single-corpus and four chunks. They separate "fine" from
+  "broken" reliably; they do not rank two adjacent bit widths to three decimals.
+
