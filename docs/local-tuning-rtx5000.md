@@ -293,3 +293,35 @@ parameters, not the total, so 512 GB would allow a 200-400B sparse model with
 around 5B active to answer at the same ~11 t/s. Capacity buys quality, bandwidth
 buys speed, and VRAM still buys the only fast tokens.
 
+
+### The memory upgrade, precisely
+
+The host is a Dell Precision Tower 7910 (board 0215PR, BIOS A34) with 16 DIMM
+slots, eight per socket. Four are populated today, two per socket, in channels 0
+and 1; channels 2 and 3 are empty on both sockets. That is why the measured
+bandwidth is half the platform's.
+
+Dell lists these configurations for this chassis, all "DDR4 Registered":
+
+| Fitted | Slots | DIMMs per channel | Speed |
+|---|---:|---:|---|
+| 128 GB (4 x 32 GB) | 4 of 16 | 1 (two sockets half filled) | DDR4-2133 |
+| **256 GB (8 x 32 GB)** | 8 of 16 | 1, all channels | DDR4-2133 |
+| **512 GB (8 x 64 GB)** | 8 of 16 | 1, all channels | DDR4-2133 |
+| 512 GB (16 x 32 GB) | 16 of 16 | 2 | likely DDR4-1866 |
+
+The second and third rows are the ones worth buying: eight DIMMs is one per
+channel on all four channels of both sockets, which is full bandwidth at full
+speed. Sixteen DIMMs doubles capacity again but puts two DIMMs on every channel,
+which on Haswell-EP normally costs a speed step with dual-rank modules.
+
+Expected gain: eight channels against four is 2x the theoretical bandwidth,
+about 104 GB/s against the measured 51.7 GB/s. CPU-resident decoding is
+bandwidth-bound, so gpt-oss-120b should move from 11-13 t/s towards 22-26 t/s.
+
+What to buy: DDR4 ECC **Registered** (RDIMM), 288-pin, 1.2 V, PC4-2133P for
+native speed. PC4-2400T or PC4-2666V also work and usually cost less; the E5 v3
+memory controller runs them at 2133. Unbuffered ECC (UDIMM) will not post in
+this machine. Match the existing modules' rank and vendor if adding to them
+rather than replacing, and populate the slots in the order the owner's manual
+specifies so both sockets stay balanced.
