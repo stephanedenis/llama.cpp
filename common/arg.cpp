@@ -527,6 +527,22 @@ static bool parse_bool_value(const std::string & value) {
     throw std::invalid_argument("the argument has been removed. " + msg);
 }
 
+// BeeLlama v0.4.x carries the Cachy server extensions as reference sources only: the SSD /
+// three-tier KV cache (common/kv-ssd-cache.*, tools/server/server-context-ssd-cache.* and
+// server-context-page-manager.*), the system prompt cache and the per-user isolation are not
+// listed in their CMakeLists, so nothing in llama-server ever reads their common_params fields.
+//
+// The command-line spellings stay registered on purpose. A script that passes one of them must
+// fail here, once and loudly, instead of starting a server that silently ignores the flag and
+// leaves the operator believing an SSD KV cache is active. Register a flag again only together
+// with the code that consumes it, and drop the [NOT IMPLEMENTED] marker from its help text.
+[[noreturn]] static void arg_deferred_feature(const std::string & arg, const std::string & feature) {
+    throw std::invalid_argument(string_format(
+        "%s is not implemented in this build: the %s feature is deferred and its sources are not "
+        "compiled into llama-server. Remove the flag, or wire the feature before relying on it.",
+        arg.c_str(), feature.c_str()));
+}
+
 //
 // common_models_handler
 //
@@ -1891,18 +1907,20 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
     ).set_env("LLAMA_ARG_CHECKPOINT_MIN_SPACING_NT").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
         {"--checkpoint-near-end"},
-        {"--no-checkpoint-near-end"},
-        string_format("force a checkpoint within the last ubatch of every prompt, regardless of --checkpoint-min-step (default: %s)",
-            params.checkpoint_near_end ? "on" : "off"),
+        {"--no-checkpoint-near-end"}, std::string("[NOT IMPLEMENTED] ") + (string_format("force a checkpoint within the last ubatch of every prompt, regardless of --checkpoint-min-step (default: %s)",
+            params.checkpoint_near_end ? "on" : "off")),
         [](common_params & params, bool value) {
-            params.checkpoint_near_end = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--checkpoint-near-end", "context checkpoint placement");
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-cpent", "--checkpoint-every-n-tokens"}, "N",
-        string_format("create a checkpoint every n tokens during prefill (processing), -1 to disable (default: %d)", params.checkpoint_every_nt),
+        {"-cpent", "--checkpoint-every-n-tokens"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("create a checkpoint every n tokens during prefill (processing), -1 to disable (default: %d)", params.checkpoint_every_nt)),
         [](common_params & params, int value) {
-            params.checkpoint_every_nt = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--checkpoint-every-n-tokens", "periodic context checkpointing");
         }
     ).set_env("LLAMA_ARG_CHECKPOINT_EVERY_N_TOKENS").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
@@ -1914,108 +1932,115 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_CACHE_RAM").set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(
-        {"-ssd", "--cache-ssd"}, "PATH",
-        "enable SSD-backed KV cache with path to storage directory",
+        {"-ssd", "--cache-ssd"}, "PATH", std::string("[NOT IMPLEMENTED] ") + ("enable SSD-backed KV cache with path to storage directory"),
         [](common_params & params, const std::string & value) {
-            params.cache_ssd_path = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-cp", "--cache-ssd-checkpoints"}, "N",
-        string_format("max number of SSD-backed checkpoints per slot (default: %d)", params.cache_ssd_max_checkpoints),
+        {"-ssd-cp", "--cache-ssd-checkpoints"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("max number of SSD-backed checkpoints per slot (default: %d)", params.cache_ssd_max_checkpoints)),
         [](common_params & params, int value) {
-            params.cache_ssd_max_checkpoints = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-checkpoints", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_CHECKPOINTS").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-hot", "--cache-ssd-hot-window"}, "N",
-        string_format("always-keep window size in tokens for SSD cache (default: %zu)", params.cache_ssd_hot_window_tokens),
+        {"-ssd-hot", "--cache-ssd-hot-window"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("always-keep window size in tokens for SSD cache (default: %zu)", params.cache_ssd_hot_window_tokens)),
         [](common_params & params, int value) {
-            params.cache_ssd_hot_window_tokens = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-hot-window", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_HOT_WINDOW").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-warm", "--cache-ssd-warm-window"}, "N",
-        string_format("keep-in-RAM window size in tokens for SSD cache (default: %zu)", params.cache_ssd_warm_window_tokens),
+        {"-ssd-warm", "--cache-ssd-warm-window"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("keep-in-RAM window size in tokens for SSD cache (default: %zu)", params.cache_ssd_warm_window_tokens)),
         [](common_params & params, int value) {
-            params.cache_ssd_warm_window_tokens = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-warm-window", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_WARM_WINDOW").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-mc", "--cache-ssd-max-cold"}, "N",
-        string_format("max cold tier checkpoints before oldest-first eviction (default: %d, 0=unlimited)", params.cache_ssd_max_cold),
+        {"-ssd-mc", "--cache-ssd-max-cold"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("max cold tier checkpoints before oldest-first eviction (default: %d, 0=unlimited)", params.cache_ssd_max_cold)),
         [](common_params & params, int value) {
-            params.cache_ssd_max_cold = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-max-cold", "SSD-backed KV cache");
         }
    ).set_env("LLAMA_ARG_CACHE_SSD_MAX_COLD").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-hot-ram", "--cache-ssd-hot-ram"}, "N",
-        string_format("hot tier RAM budget in MiB for SSD cache (default: auto-size, 0=auto)"),
+        {"-ssd-hot-ram", "--cache-ssd-hot-ram"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("hot tier RAM budget in MiB for SSD cache (default: auto-size, 0=auto)")),
         [](common_params & params, int value) {
-            params.cache_ssd_hot_ram_mib = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-hot-ram", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_HOT_RAM").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"-ssd-warm-ram", "--cache-ssd-warm-ram"}, "N",
-        string_format("warm tier RAM budget in MiB for SSD cache (default: auto-size, 0=auto)"),
+        {"-ssd-warm-ram", "--cache-ssd-warm-ram"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("warm tier RAM budget in MiB for SSD cache (default: auto-size, 0=auto)")),
         [](common_params & params, int value) {
-            params.cache_ssd_warm_ram_mib = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-warm-ram", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_WARM_RAM").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--cache-ssd-max-conversations"}, "N",
-        string_format("max conversation directories (default: %d, 0=unlimited)", params.cache_ssd_max_conversations),
+        {"--cache-ssd-max-conversations"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("max conversation directories (default: %d, 0=unlimited)", params.cache_ssd_max_conversations)),
         [](common_params & params, int value) {
-            params.cache_ssd_max_conversations = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-max-conversations", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_MAX_CONVERSATIONS").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--cache-ssd-cold-maxsize"}, "N",
-        string_format("global cap on total cold tier size across all conversations in MiB (default: %lld, 0=unlimited)",
-            (long long)params.cache_ssd_cold_max_size_mib),
+        {"--cache-ssd-cold-maxsize"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("global cap on total cold tier size across all conversations in MiB (default: %lld, 0=unlimited)",
+            (long long)params.cache_ssd_cold_max_size_mib)),
         [](common_params & params, int value) {
-            if (value < 0) {
-                throw std::invalid_argument("invalid value for --cache-ssd-cold-maxsize: must be >= 0");
-            }
-            params.cache_ssd_cold_max_size_mib = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-cold-maxsize", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_COLD_MAXSIZE").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--prompt-max"}, "N",
-        string_format("max system prompt cache entries (default: %d, 0=disabled)", params.prompt_cache_max),
+        {"--prompt-max"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("max system prompt cache entries (default: %d, 0=disabled)", params.prompt_cache_max)),
         [](common_params & params, int value) {
-            params.prompt_cache_max = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--prompt-max", "system prompt cache");
         }
     ).set_env("LLAMA_ARG_PROMPT_MAX").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--cache-ssd-system-prompts"}, "N",
-        string_format("max global system prompt entries cached for reuse across conversations (default: %d, 0=disabled)", params.cache_ssd_system_prompts),
+        {"--cache-ssd-system-prompts"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("max global system prompt entries cached for reuse across conversations (default: %d, 0=disabled)", params.cache_ssd_system_prompts)),
         [](common_params & params, int value) {
-            params.cache_ssd_system_prompts = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-system-prompts", "SSD-backed system prompt cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_SYSTEM_PROMPTS").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--cache-ssd-system-max-days"}, "N",
-        string_format("expire system prompt cache entries unused for N days (default: %d, 0=never)", params.cache_ssd_system_max_days),
+        {"--cache-ssd-system-max-days"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("expire system prompt cache entries unused for N days (default: %d, 0=never)", params.cache_ssd_system_max_days)),
         [](common_params & params, int value) {
-            params.cache_ssd_system_max_days = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-system-max-days", "SSD-backed system prompt cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_SYSTEM_MAX_DAYS").set_examples({LLAMA_EXAMPLE_SERVER}));
    add_opt(common_arg(
-        {"-ssd-ps", "--cache-ssd-page-size"}, "N",
-        string_format("tokens per page for SSD cache: 512, 1024, 2048 (default: %zu)", params.cache_ssd_page_size_tokens),
+        {"-ssd-ps", "--cache-ssd-page-size"}, "N", std::string("[NOT IMPLEMENTED] ") + (string_format("tokens per page for SSD cache: 512, 1024, 2048 (default: %zu)", params.cache_ssd_page_size_tokens)),
         [](common_params & params, int value) {
-            if (value != 512 && value != 1024 && value != 2048) {
-                throw std::invalid_argument("invalid page size, must be 512, 1024, or 2048");
-            }
-            params.cache_ssd_page_size_tokens = value;
+            (void) params;
+            (void) value;
+            arg_deferred_feature("--cache-ssd-page-size", "SSD-backed KV cache");
         }
     ).set_env("LLAMA_ARG_CACHE_SSD_PAGE_SIZE").set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
-        {"--cache-ssd-no-fsync"},
-        string_format("skip fsync on SSD checkpoint writes (default: %s)", params.cache_ssd_no_fsync ? "enabled" : "disabled"),
+        {"--cache-ssd-no-fsync"}, std::string("[NOT IMPLEMENTED] ") + (string_format("skip fsync on SSD checkpoint writes (default: %s)", params.cache_ssd_no_fsync ? "enabled" : "disabled")),
         [](common_params & params) {
-            params.cache_ssd_no_fsync = true;
+            (void) params;
+            arg_deferred_feature("--cache-ssd-no-fsync", "SSD-backed KV cache");
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(

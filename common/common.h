@@ -704,10 +704,17 @@ struct common_params {
     bool    cache_prompt        = true;  // whether to enable prompt caching
     bool    cache_idle_slots    = true;  // save and clear idle slots upon starting a new task
     int32_t n_ctx_checkpoints   = 32;    // max number of context checkpoints per slot
-    int32_t checkpoint_every_nt = -1;   // make a checkpoint every n tokens during prefill, -1 to disable
     int32_t checkpoint_min_step = 8192;  // minimum spacing between context checkpoints
-    bool    checkpoint_near_end = false; // create a checkpoint near the end of every prompt (upstream default: false)
     int32_t cache_ram_mib       = 8192;  // -1 = no limit, 0 - disable, 1 = 1 MiB, etc.
+
+    // ---- deferred Cachy fields: parsed, never read ----------------------------------------
+    // Nothing outside common/arg.cpp reads the fields below. The features they configure
+    // (SSD/three-tier KV cache, system prompt cache, periodic/near-end checkpoints) exist in
+    // this tree only as reference sources that no CMake target compiles, and the matching
+    // command-line options reject with an error (see arg_deferred_feature in common/arg.cpp).
+    // Keep them next to the code that will consume them, or delete both together.
+    int32_t checkpoint_every_nt = -1;   // make a checkpoint every n tokens during prefill, -1 to disable
+    bool    checkpoint_near_end = false; // create a checkpoint near the end of every prompt
     std::string cache_ssd_path = "";       // path for SSD-backed KV cache (empty = disabled)
     int32_t cache_ssd_max_checkpoints = 64;  // max checkpoints to store on SSD per slot
     size_t cache_ssd_hot_window_tokens = 16384;  // always-keep window in tokens
@@ -722,6 +729,7 @@ struct common_params {
     int32_t cache_ssd_system_prompts = 8;   // max global system prompts to cache (0=disabled)
     int32_t cache_ssd_system_max_days = 30; // expire system prompts unused for N days (0=never)
     bool cache_ssd_no_fsync = false;      // skip fsync on SSD checkpoint writes (trade durability for latency)
+    // ---- end deferred Cachy fields --------------------------------------------------------
 
    std::string hostname      = "127.0.0.1";
     std::string public_path   = "";                                                                         // NOLINT
