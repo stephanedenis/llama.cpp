@@ -509,3 +509,14 @@ target_include_directories(test-ggml-op-coverage PRIVATE ${PROJECT_SOURCE_DIR}/g
 target_link_libraries(test-ggml-op-coverage PRIVATE ggml)
 add_test(NAME test-ggml-op-coverage COMMAND $<TARGET_FILE:test-ggml-op-coverage>)
 set_property(TEST test-ggml-op-coverage PROPERTY LABELS main)
+
+# SSD cache library tests.
+#
+# common/kv-ssd-cache.cpp is compiled into llama-common, but the server-side wiring
+# (tools/server/server-context-ssd-cache.cpp and server-context-page-manager.cpp) is not part of
+# any target yet, and the --cache-ssd* options report [NOT IMPLEMENTED]. These tests exercise the
+# kv_ssd_* library directly, so they stay valid and keep that code honest until it is wired up.
+# They are pure library tests: no model file and no server required.
+llama_build_and_test(test-ssd-cache-caps.cpp)
+llama_build_and_test(test-ssd-cache-continuation.cpp)
+llama_build_and_test(test-ssd-cache-prefix-match.cpp)

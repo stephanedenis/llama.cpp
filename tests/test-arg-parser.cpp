@@ -32,12 +32,14 @@ static std::string capture_stderr(const std::function<void()> & fn) {
     const int stderr_fd = _fileno(stderr);
     const int saved_fd  = _dup(stderr_fd);
     assert(saved_fd >= 0);
-    assert(_dup2(_fileno(capture), stderr_fd) == 0);
+    assert(_dup2(_fileno(capture), stderr_fd) != -1);
 #else
     const int stderr_fd = fileno(stderr);
     const int saved_fd  = dup(stderr_fd);
     assert(saved_fd >= 0);
-    assert(dup2(fileno(capture), stderr_fd) == 0);
+    // dup2() returns the destination descriptor on success, not 0. Only _dup2() on Windows
+    // returns 0, so an "== 0" check here aborts on every POSIX run.
+    assert(dup2(fileno(capture), stderr_fd) != -1);
 #endif
 
     fn();
@@ -51,10 +53,10 @@ static std::string capture_stderr(const std::function<void()> & fn) {
     }
 
 #ifdef _WIN32
-    assert(_dup2(saved_fd, stderr_fd) == 0);
+    assert(_dup2(saved_fd, stderr_fd) != -1);
     _close(saved_fd);
 #else
-    assert(dup2(saved_fd, stderr_fd) == 0);
+    assert(dup2(saved_fd, stderr_fd) != -1);
     close(saved_fd);
 #endif
     fclose(capture);
