@@ -448,3 +448,39 @@ matter for a real air gap:
 
 Model downloads themselves are the obvious one-time exception: every model in
 use is already on disk under `~/FastNVMe/models`.
+
+## The two tiers, and where /v1/decision belongs
+
+`scripts/serve-agentic.sh` now starts two servers instead of one:
+
+| Tier | Model | Port | Role |
+|---|---|---|---|
+| brain | gpt-oss-120b + EAGLE3, experts in RAM | 8010 | reasoning, native tool calls |
+| reflex | Qwen2.5-VL-7B + `--decision-seqs 16` | 8011 | structured decisions, no generation |
+
+Measured on this host, both resident at once (about 12.5 GB of the 30 GB of
+VRAM):
+
+| | |
+|---|---|
+| `/v1/decision`, first call | 279 ms (pays the prefill of instructions and field catalogue) |
+| `/v1/decision`, warm | **46-50 ms**, correct tool at p = 0.99-1.00 |
+| gpt-oss tool call | correct, 18.1 t/s |
+
+The script warms the reflex prefix before reporting, because the cold number is
+six times the warm one and would be misleading.
+
+**The reflex layer is not for the agent's tool calls.** `agent.py` uses gpt-oss
+native tool calling, which produces free-form arguments; `/v1/decision` only
+fills finite domains (enum, boolean, bounded integer). Native wins there. The
+decision endpoint earns its place for what it was ported for:
+
+- routing and sensitivity classification in front of the agent (see
+  `agent-kit/README-routage.md`), where it measured 95.8 % sensitivity on a 7B
+  against 62.5 % on a 1.5B, so the larger model is the one to keep resident;
+- giving tool selection to models that have no tool template at all, which was
+  the standing blocker before gpt-oss arrived.
+
+Keep `--decision-seqs` off the brain: it forces the unified KV cache, which
+would neutralise the KVarN SWA overrides on that model, and gpt-oss is far too
+slow to answer a decision anyway.
