@@ -484,3 +484,52 @@ decision endpoint earns its place for what it was ported for:
 Keep `--decision-seqs` off the brain: it forces the unified KV cache, which
 would neutralise the KVarN SWA overrides on that model, and gpt-oss is far too
 slow to answer a decision anyway.
+
+## Which models this box is actually good at
+
+Measured on the same agentic task (fix a broken project until its tests pass),
+same harness, same verification:
+
+| Model | Total / active | Placement | tg | Agent task |
+|---|---|---:|---:|---|
+| **Qwen3-30B-A3B-Instruct-2507** | 30B / **3B** | all in VRAM, 18.6 GB | **108.1 t/s** | **6 s, 6 steps** |
+| Muse Glimmer 30B | 30B / 30B dense | all in VRAM, 19.1 GB | 19.1-30.8 t/s | 77 s, 11 steps |
+| gpt-oss-120b | 117B / 5.1B | experts in RAM, 63 GB | 18.1 t/s | 202-325 s, 21-25 steps |
+
+The ordering is not "bigger is better". It is set by two facts:
+
+- **What fits in VRAM is in a different league.** 30 GB of VRAM against 54 GB/s
+  of RAM is roughly a tenfold difference in the bandwidth that decode depends
+  on.
+- **Sparse beats dense at equal size.** Qwen3-30B-A3B reads about 1.8 GB per
+  token and Muse Glimmer about 19 GB, for the same 30B of weights. That is the
+  whole 3.5x between them, and it is why gpt-oss-120b (63 GB of weights, 2.7 GB
+  read per token) stays competitive with a model five times its size.
+
+### Split mode depends on the model
+
+Same three models, layer against tensor:
+
+| Model | Kind | layer | tensor | Winner |
+|---|---|---:|---:|---|
+| Qwen2.5-14B | dense | 38.6 | **59.6** | tensor, +54 % |
+| Qwen3-30B-A3B | MoE | **108.1** | 62.2 | layer, +74 % |
+| Muse Glimmer 30B | dense | 19.1 | **30.8** | tensor, +61 % |
+| gpt-oss-120b | MoE, RAM-resident | 12.7 | n/a | layer |
+
+Dense models want `-sm tensor` on this NVLink pair. MoE models want
+`-sm layer`: expert routing already generates cross-GPU traffic, and tensor
+parallelism adds an allreduce per layer on top of it.
+
+### `-sm tensor` still crashes on some loadouts
+
+Pre-existing, not introduced by the Muse Glimmer port. `llama-cli -sm tensor`
+aborts on the dense 14B, and `llama-server -sm tensor` aborts loading Muse
+Glimmer at `-c 16384` while the same command succeeds at `-c 8192`:
+
+```
+GGML_ASSERT(meta_buf_ctx->bufs[i]) failed   (ggml-backend-meta.cpp:1799)
+```
+
+It happens during tensor allocation at load, so it depends on the memory layout
+rather than on the model. Use layer split when it fires.
